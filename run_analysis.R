@@ -2,141 +2,103 @@ library(data.table)
 library(tidyr)
 library(dplyr)
 
-# Working in the train directory to load data
-setwd("./UCI HAR Dataset/train")
-
-# Listing of current files
-files <- list.files()
-files <- files [2:4]
-
-subject = c("subject_train", "X_train", "y_train")
-
-for (i in 1:3)
-{
-        data  <- files [i]
-        data <- read.csv(files[i], na.strings = "NA" )
-        subject[i] <- data
-}
-
-# Data frame Train
-DT_train <- as.data.table(subject)
-colnames(DT_train)<- c("subject", "X", "y")
-
-# Working in the test directory to load data
-setwd("../")
-setwd("../")
-setwd("./UCI HAR Dataset/test")
-
-# Listing of current files
-files <- list.files()
-files <- files [2:4]
-
-subject = c("subject_test", "X_test", "y_test")
-
-for (i in 1:3)
-{
-        data  <- files [i]
-        data <- read.csv(files[i], na.strings = "NA" )
-        subject[i] <- data
-}
-
-# Data frame Test
-DT_test <- as.data.table(subject)
-colnames(DT_test)<-  c("subject", "X", "y")
-
-# A single data frame with the result of train and test
-DT <- rbind(DT_train, DT_test)
-DT_bis <- DT
-
-#Some clean up
-rm(data)
-rm(subject)
-rm(files)
-#Returm to Documents folder
-setwd("../")
-setwd("../")
-
-#Extract only the measurements on the mean and standard deviation for each measurement
-
-# number of rows od DT
-nrows = dim(DT)[1]
-
-# Initiate the first calculation
-DT_bis <- separate_rows(DT[1,], X, convert = TRUE)
-DT_bis <- na.omit(DT_bis)
-moy = mean(unlist(DT_bis[,2]))
-std = sd(unlist(DT_bis[,2]))
-tidy <- c(DT_bis[1,1], moy, std, DT_bis[1,3])
-
-for (j in 2:nrows)
-{
-        DT_bis <- separate_rows(DT[j,], X, convert = TRUE)
-        DT_bis <- na.omit(DT_bis)
-        moy = mean(unlist(DT_bis[,2]))
-        std = sd(unlist(DT_bis[,2]))
-        tidy <- rbind(tidy, c(DT_bis[1,1], moy, std, DT_bis[1,3]) )
-        rm(DT_bis)
-}
-
-colnames(tidy) <- c("subject","mean","sd", "activity")
-
-# Return as a data table
-data <- as.data.table(tidy)
-rm(tidy)
-
-# Use descriptive activity names to name the activities in the data set
-# Appropriately labels the data set with descriptive variable names
-
-# Working in the HAR directory  directory to get activity labels
+# Working in the HAR directory  directory to get activity labels and features list
 setwd("./UCI HAR Dataset")
 
 files <- list.files()
-files <- files [1]
 
-activity <- read.table(files, sep = " ")
+activity <- read.table(files[1], sep = " ")
+features <- read.table(files[2], sep = " ")
 head(activity)
-#
-#V1                 V2
-#1  1            WALKING
-#2  2   WALKING_UPSTAIRS
-#3  3 WALKING_DOWNSTAIRS
-#4  4            SITTING
-#5  5           STANDING
-#6  6             LAYING
+features[1:5,1:2]
 
-#Return to main directory
+dim(activity)  # 6 x 2
+
+dim(features) # 561 x 2
+
+# Working in the train directory to load data
+trainData <- read.table("./train/X_train.txt")
+dim(trainData)  #7352x561
+trainLabel <- read.table("./train/y_train.txt")
+table(trainLabel)
+trainSubject <- read.table("./train/subject_train.txt")
+table(trainSubject)
+
+# Working in the test directory to load data
+testData <- read.table("./test/X_test.txt")
+dim(testData)
+testLabel <- read.table("./test/y_test.txt")
+table(testLabel)
+testSubject <- read.table("./test/subject_test.txt")
+table(testSubject)
+
+# Join the train/test datas
+DT<- rbind(trainData,testData)
+Label <- rbind(trainLabel, testLabel)
+Subject <- rbind(trainSubject,testSubject)
+
+# Question2 : Extracts only the measurements on the mean and standard 
+# deviation for each measurement
+
+# List of indices with mean or std
+meanStdIndices <- grep("mean\\(\\)|std\\(\\)", features[, 2])
+
+DT <- DT[,meanStdIndices] # Keep the columns in DT with features of mean or std
+features <- features[meanStdIndices,2]
+
+# Rename with appropriate name and clean up of the naming
+colnames(DT) <- features
+dim(DT) # 10299 * 66
+
+names(DT) <- gsub("\\(\\)", "", names(DT)) # remove the () in column names
+names(DT) <- gsub("-", "", names(DT)) # remove the - in column names
+
+# Question 3: Use descriptive activity names to name the activities in the data set
+Label$V1 <- as.factor(Label$V1)
+levels(Label$V1) <- list("WALKING"=1,"WALKING UPSTAIRS"=2,"WALKING DOWNSTAIRS"=3, "SITTING"=4,"STANDING"=5,"LAYING"=6)
+colnames(Label) <- "Activity"
+
+# Question 4: Appropriately labels the data set with descriptive activity names
+colnames(Subject) <- "Subject"
+Cleaned_DT <- cbind(Subject, Label, DT)
+dim(Cleaned_DT)   # 10299 x 68
+Cleaned_DT [1:5,1:3]
+#  Subject Activity    tBodyAcc-mean-X
+#1       1 STANDING       0.2885845
+#2       1 STANDING       0.2784188
+#3       1 STANDING       0.2796531
+#4       1 STANDING       0.2791739
+#5       1 STANDING       0.2766288
+
 setwd("../")
+write.table(Cleaned_DT, "data.txt")
 
-# NOTE: After multiple attempts to change the integer into a character according to the table above,
-# I decided to keep using the integer for the next step
+# Question 5: Create a second, independant tidy data set with the average of each variable
+# for each activity and each subject
+People <- length(table(Subject))  #30
+Activity <- length(table(Label))    #6
+Column <- dim(Cleaned_DT)[2]    #68
+Res <- matrix(NA, nrow = People*Activity, ncol = Column)
+result <- as.data.frame(Res)
+colnames(result) <- colnames(Cleaned_DT)
+activity[,2] <- gsub("_"," ", activity[,2])
 
-# Average of each variable per activity and per subset
-# NOTE: Since I was digging with much effort without clear results,
-# I swicthed on the old proven method with 2 loops. Would likely know a more 
-# convenient and efficient way
+row <- 1
 
-new_data <- data[-c(1:nrows),]
-new_data <- select(new_data, -3)
-
-for (ind in (1:30))
-{
-        for (act in (1:6))
-        {
-          d <-  data %>%
-                select(subject, mean , activity)    %>%
-                filter(subject == ind, activity == act) 
-          
-          d   %>%     mutate (mean = mean(as.numeric(d$mean))) 
-          
-          new_data <- rbind(new_data, d[1,])     
+for (i in 1:People){
+        for (j in 1:Activity){
+                result[row,1] <- sort(unique(Subject)[,1][i])
+                result[row,2] <- activity[j, 2]
+                boolean1 <- i == Cleaned_DT$Subject
+                boolean2 <- activity [j,2] == Cleaned_DT$Activity
+                result [row, 3: Column] <- colMeans(Cleaned_DT[boolean1&boolean2, 3:Column])
+                row <- row +1
         }
 }
 
-# Create a data set od previous step as a txt file
+# A more elegant way to perform the same result: shorter and concise !
+tidy_data<- Cleaned_DT %>% group_by(Subject, Activity )%>% summarise_all(mean)
 
-new_data$subject  <- unlist(new_data$subject)
-new_data$mean  <- unlist(new_data$mean)
-new_data$activity  <- unlist(new_data$activity)
-write.table(new_data, file = "tidy.txt", row.name = FALSE, sep="   ")
+# Create a data set of previous step as a txt file
 
-
+write.table(result, file = "data_with_means.txt", row.name = FALSE)
